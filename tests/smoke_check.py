@@ -82,6 +82,8 @@ def window_selftest(app: str, tmp: Path) -> None:
 
 
 def main() -> None:
+    if hasattr(sys.stdout, "reconfigure"):  # Windows consoles default to a code page without ✓
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     mode = sys.argv[1] if len(sys.argv) > 1 else "cli"
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
