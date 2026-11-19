@@ -127,14 +127,20 @@ ACCENT2 = "#a77dff"        # violet
 WARN = "#ffcf7a"
 ERR = "#ff9a9a"
 # section cards step from deep blue to violet, a little lighter each time
-CARD_FIRST, CARD_LAST = "#23418c", "#5d3ea6"   # solid blue -> violet
+# Section colours are a translucent tint over the charcoal (Tk can't do real transparency, so the
+# tint is blended with the window colour). Blue at the top to violet at the bottom; the tint gets a
+# little stronger going down, so each section is slightly lighter than the one above.
+CARD_TINT_FIRST, CARD_TINT_LAST = "#4a72ff", "#a070ff"
+CARD_ALPHA_FIRST, CARD_ALPHA_LAST = 0.20, 0.28
 
 
 class Theme:
     def __init__(self, root: tk.Tk, n_cards: int):
         self.style = ttk.Style(root)
         self.style.theme_use("clam")
-        self.cards = [mix(CARD_FIRST, CARD_LAST, i / max(n_cards - 1, 1)) for i in range(n_cards)]
+        steps = [i / max(n_cards - 1, 1) for i in range(n_cards)]
+        self.cards = [mix(WINDOW_BG, mix(CARD_TINT_FIRST, CARD_TINT_LAST, t),
+                          CARD_ALPHA_FIRST + (CARD_ALPHA_LAST - CARD_ALPHA_FIRST) * t) for t in steps]
         base = tkfont.nametofont("TkDefaultFont")
         fam, sz = base.actual("family"), abs(int(base.actual("size"))) or 13
 
@@ -165,7 +171,6 @@ class Theme:
         return dict(fill=fill,
                     inset=mix(fill, "#0b0d16", 0.42),           # list / table / log wells
                     border=mix(fill, "#ffffff", 0.17),          # light, low-contrast outer edge
-                    divider=mix(fill, "#ffffff", 0.24),         # line between stacked sections
                     header=mix("#ffffff", ACCENT, 0.30))
 
     def _button(self, name: str, fill: str) -> None:
@@ -236,7 +241,7 @@ class Card(tk.Canvas):
     (or, with expand=True, gives the body whatever height it gets).
 
     position: "first" (rounded top), "middle", "last" (rounded bottom) or "only" (all rounded).
-    Cards sit flush; a thin light line separates each section from the one above."""
+    Cards sit flush; the colour step alone separates one section from the next."""
 
     def __init__(self, parent, theme: Theme, index: int, title: str = "", hint: str = "", expand=False,
                  position="only", radius=12, pad=11):
@@ -248,12 +253,10 @@ class Card(tk.Canvas):
         self._rb = radius if position in ("last", "only") else 0
         self._bg = self.create_polygon(_round_rect(0, 0, 40, 40, self._rt, self._rb), smooth=True, fill=self.fill,
                                        outline=self.border if position == "only" else "")
-        # outer edges of the column (sides, plus the rounded top or bottom); "middle" cards have two plain sides
+        # faint outer edge of the column (sides, plus the rounded top or bottom); "middle" cards have two sides
         n = 2 if position == "middle" else (1 if position in ("first", "last") else 0)
         self._edges = [self.create_line(0, 0, 1, 1, fill=self.border, width=1, smooth=(position != "middle"))
                        for _ in range(n)]
-        self._divider = (self.create_line(0, 0, 1, 0, fill=c["divider"], width=1)
-                         if position in ("middle", "last") else None)
         self.body = tk.Frame(self, bg=self.fill, bd=0, highlightthickness=0)
         if title:
             head = tk.Frame(self.body, bg=self.fill)
@@ -296,8 +299,6 @@ class Card(tk.Canvas):
         elif self.position == "middle":
             self.coords(self._edges[0], x1, 0, x1, h)
             self.coords(self._edges[1], x2, 0, x2, h)
-        if self._divider is not None:
-            self.coords(self._divider, 0, 0.5, w, 0.5)
 
 
 def _capsule_columns(width, height, radius):
