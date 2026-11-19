@@ -124,5 +124,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --title "Mesh2CAD ${GITHUB_REF_NAME#v}" --notes-file .github/RELEASE_NOTES.md
+          # Works whether the tag was pushed with git or created on GitHub's "Draft a new release" page.
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber
+            gh release edit "$TAG" --title "Mesh2CAD ${TAG#v}" --notes-file .github/RELEASE_NOTES.md
+          else
+            gh release create "$TAG" artifacts/* --title "Mesh2CAD ${TAG#v}" --notes-file .github/RELEASE_NOTES.md
+          fi

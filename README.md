@@ -144,9 +144,11 @@ python tests/make_parts.py /tmp/parts && python tests/run_parts.py /tmp/parts   
 
 ## Making a release (maintainer)
 
-1. Bump `__version__` in `mesh2cad/__init__.py` and add a section to `CHANGELOG.md`.
-2. Commit, then `git tag v0.2.0 && git push origin main --tags`.
-3. GitHub Actions builds and checks the Mac (Apple Silicon + Intel) and Windows apps, then publishes them as a release. Every push to `main` also builds them; the downloads are attached to that workflow run.
+1. Bump `__version__` in `mesh2cad/__init__.py`, add a section to `CHANGELOG.md`, and push to `main`.
+2. Create the tag in either of two ways:
+   - On GitHub: **Releases → Draft a new release**, type the tag (e.g. `v0.2.0`) and choose *Create new tag on publish*, target `main`, then **Publish release**.
+   - Or from a clone: `git tag v0.2.0 && git push origin v0.2.0`.
+3. GitHub Actions builds and checks the Mac (Apple Silicon + Intel) and Windows apps, then attaches them to the release with the notes from `.github/RELEASE_NOTES.md` (about 25 minutes). Every push to `main` also builds them; the downloads are attached to that workflow run.
 
 ## License
 
