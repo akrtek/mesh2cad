@@ -8,6 +8,7 @@ First version for outside testers.
 - **Per-stage timings** in the activity log after each body, so slow models show where the time went.
 - **No more frozen-looking window in the background (macOS).** App Nap is disabled while a conversion runs.
 - **New look:** lighter charcoal background, rounded section boxes that step from blue to violet, soft borders, and real checkmarks.
+- **Fits laptop screens:** on screens under 1050 px tall, Conversion options start folded into a one-line summary (click to change them). Summary and Activity log share the remaining space, with a draggable divider between them.
 - **Feedback button:** copies version, settings and the log, then opens the feedback form.
 - **Copy Log** button. The log is capped at 5,000 lines in long sessions.
 - **Sturdier runs:**

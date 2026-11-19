@@ -219,8 +219,11 @@ class Theme:
 # Tk leaks a little memory for every canvas item created and deleted, so these widgets build
 # their items once per size and afterwards only move or recolour them.
 def _round_rect(x1, y1, x2, y2, r):
-    return [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2,
-            x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    """Points for a smoothed polygon; the doubled points keep the straight sides straight."""
+    return [x1 + r, y1, x1 + r, y1, x2 - r, y1, x2 - r, y1, x2, y1,
+            x2, y1 + r, x2, y1 + r, x2, y2 - r, x2, y2 - r, x2, y2,
+            x2 - r, y2, x2 - r, y2, x1 + r, y2, x1 + r, y2, x1, y2,
+            x1, y2 - r, x1, y2 - r, x1, y1 + r, x1, y1 + r, x1, y1]
 
 
 class Card(tk.Canvas):
@@ -542,8 +545,16 @@ class Mesh2CadApp:
         card = Card(main, T, 2, "Conversion options")
         card.pack(**gap)
         b, p = card.body, card.prefix
+        # collapsible: a one-line summary stands in for the controls (saves height on smaller screens)
+        self.opts_summary, self.opts_chevron = tk.StringVar(), tk.StringVar()
+        ttk.Label(card.head, textvariable=self.opts_chevron, style=f"{p}.Muted.TLabel").pack(side="right")
+        ttk.Label(card.head, textvariable=self.opts_summary, style=f"{p}.Muted.TLabel").pack(side="left", padx=(12, 0))
+        for w in (card.head, *card.head.winfo_children()):
+            w.configure(cursor="hand2")
+            w.bind("<Button-1>", lambda _e: self._toggle_options())
         grid = tk.Frame(b, bg=card.fill)
         grid.pack(fill="x")
+        self._opts_grid, self._opts_head = grid, card.head
         lab = dict(style=f"{p}.TLabel")
         ttk.Label(grid, text="Mode", **lab).grid(row=0, column=0, sticky="w", pady=1)
         mrow = tk.Frame(grid, bg=card.fill)
@@ -580,6 +591,14 @@ class Mesh2CadApp:
                                                                                             padx=(22, 0))
         grid.columnconfigure(0, minsize=130)
         self._sync_tol()
+        for v in (self.mode_var, self.auto_tol_var, self.tol_var, self.angle_var, self.seconds_var, self.split_var,
+                  self.json_var):
+            v.trace_add("write", lambda *_a: self._update_opts_summary())
+        self._opts_open = True
+        if self.root.winfo_screenheight() < 1050:  # start folded on laptop-height screens
+            self._toggle_options()
+        else:
+            self._update_opts_summary()
 
         # --- run: actions + progress
         card = Card(main, T, 3)
@@ -598,15 +617,12 @@ class Mesh2CadApp:
                    command=self.reveal_selected).pack(side="right")
         ttk.Button(act, text="Open STEP", style=f"{p}.TButton", command=self.open_selected).pack(side="right",
                                                                                               padx=(0, 8))
-        srow = tk.Frame(b, bg=card.fill)
-        srow.pack(fill="x", pady=(8, 2))
         self.status_var = tk.StringVar(value="Ready. Add files, then press Convert.")
         self.elapsed_var = tk.StringVar(value="")
-        ttk.Label(srow, textvariable=self.elapsed_var, style=f"{p}.Muted.TLabel").pack(side="right")
-        ttk.Label(srow, textvariable=self.status_var, style=f"{p}.Bold.TLabel", width=1).pack(side="left", fill="x",
-                                                                                              expand=True)
+        ttk.Label(act, textvariable=self.status_var, style=f"{p}.Bold.TLabel", width=1).pack(side="left", fill="x",
+                                                                                             expand=True, padx=(16, 8))
         brow = tk.Frame(b, bg=card.fill)
-        brow.pack(fill="x", pady=2)
+        brow.pack(fill="x", pady=(8, 2))
         self.file_bar, self.file_pct = self._bar(brow, card, "This file")
         tk.Frame(brow, bg=card.fill, width=16).pack(side="left")
         self.all_bar, self.all_pct = self._bar(brow, card, "All files")
@@ -615,20 +631,31 @@ class Mesh2CadApp:
         self.heart_var = tk.StringVar(value="")
         self.heart_label = ttk.Label(drow, textvariable=self.heart_var, style=f"{p}.Muted.TLabel")
         self.heart_label.pack(side="right")
+        ttk.Label(drow, textvariable=self.elapsed_var, style=f"{p}.Muted.TLabel").pack(side="right", padx=(0, 14))
         self.stage_var = tk.StringVar(value="")
         ttk.Label(drow, textvariable=self.stage_var, style=f"{p}.Muted.TLabel", width=1).pack(side="left", fill="x",
                                                                                              expand=True)
 
-        # --- activity log (packed at the bottom before the table so it always stays visible)
-        card = Card(main, T, 5, "Activity log")
-        card.pack(side="bottom", fill="x")
+        # --- summary + activity log share the rest of the height; drag the gap between them to resize.
+        # Each keeps a minimum, so neither disappears on a short screen.
+        split = tk.PanedWindow(main, orient="vertical", bg=WINDOW_BG, bd=0, sashwidth=8, sashpad=0,
+                               showhandle=False, sashrelief="flat", opaqueresize=True)
+        split.pack(fill="both", expand=True)
+        sum_card = Card(split, T, 4, "Summary", "double-click a row to show the STEP file", expand=True)
+        log_card = Card(split, T, 5, "Activity log", expand=True)
+        sum_card.configure(height=180)
+        log_card.configure(height=130)
+        split.add(sum_card, minsize=100, stretch="always")
+        split.add(log_card, minsize=86, stretch="always")
+
+        card = log_card
         b, p, c = card.body, card.prefix, card.colors
         ttk.Button(card.head, text="Copy Log", style=f"{p}.Small.TButton", command=self.copy_log).pack(side="right")
         lf = tk.Frame(b, bg=c["border"])
-        lf.pack(fill="x")
+        lf.pack(fill="both", expand=True)
         li = tk.Frame(lf, bg=c["inset"])
         li.pack(fill="both", expand=True, padx=1, pady=1)
-        self.log_box = tk.Text(li, height=4, state="disabled", font=T.f_mono, bg=c["inset"], fg=TEXT, bd=0,
+        self.log_box = tk.Text(li, height=2, state="disabled", font=T.f_mono, bg=c["inset"], fg=TEXT, bd=0,
                                highlightthickness=0, relief="flat", wrap="none", insertbackground=TEXT,
                                selectbackground=mix(c["inset"], ACCENT, 0.6), padx=8, pady=6)
         lsb = ttk.Scrollbar(li, orient="vertical", command=self.log_box.yview, style=f"{p}.Vertical.TScrollbar")
@@ -637,9 +664,8 @@ class Mesh2CadApp:
         lsb.pack(side="left", fill="y")
         self.log_box.tag_configure("dim", foreground=MUTED)
 
-        # --- summary table (takes whatever height is left)
-        card = Card(main, T, 4, "Summary", "double-click a row to show the STEP file", expand=True)
-        card.pack(fill="both", expand=True, pady=(0, 8))
+        # --- summary table
+        card = sum_card
         b, p, c = card.body, card.prefix, card.colors
         self.totals_var = tk.StringVar(value="")
         ttk.Label(b, textvariable=self.totals_var, style=f"{p}.Bold.TLabel").pack(side="bottom", anchor="w",
@@ -651,7 +677,7 @@ class Mesh2CadApp:
         cols = ("file", "body", "tris", "faces", "reduction", "surfaces", "dev", "mode", "time", "result")
         heads = ("File", "Body", "Triangles", "Faces", "Reduction", "Surfaces", "Max dev mm", "Mode", "Time s", "Result")
         widths = (150, 140, 75, 55, 90, 200, 85, 75, 55, 110)
-        self.tree = ttk.Treeview(ti, columns=cols, show="headings", height=4, style=f"{p}.Treeview")
+        self.tree = ttk.Treeview(ti, columns=cols, show="headings", height=2, style=f"{p}.Treeview")
         for col, h, w in zip(cols, heads, widths):
             self.tree.heading(col, text=h)
             anchor = "e" if col in ("tris", "faces", "dev", "time") else "w"
@@ -671,6 +697,31 @@ class Mesh2CadApp:
         pct = tk.StringVar(value="")
         ttk.Label(row, textvariable=pct, style=f"{card.prefix}.Muted.TLabel", width=4, anchor="e").pack(side="left")
         return bar, pct
+
+    def _toggle_options(self) -> None:
+        self._opts_open = not self._opts_open
+        if self._opts_open:
+            self._opts_head.pack_configure(pady=(0, 6))
+            self._opts_grid.pack(fill="x")
+        else:
+            self._opts_grid.pack_forget()
+            self._opts_head.pack_configure(pady=0)
+        self._update_opts_summary()
+
+    def _update_opts_summary(self) -> None:
+        self.opts_chevron.set("Hide ▴" if self._opts_open else "Change ▾")
+        if self._opts_open:
+            self.opts_summary.set("")
+            return
+        tol = "auto tolerance" if self.auto_tol_var.get() else f"tolerance {self.tol_var.get()} mm"
+        secs = self.seconds_var.get()
+        parts = [self.mode_var.get().capitalize(), tol, f"curve {self.angle_var.get()}°",
+                 "no time limit" if secs.strip() in ("0", "0.0") else f"budget {secs} s"]
+        if self.split_var.get():
+            parts.append("split pieces")
+        if self.json_var.get():
+            parts.append("JSON report")
+        self.opts_summary.set(" · ".join(parts))
 
     def _sync_tol(self) -> None:
         self.tol_entry.state(["disabled"] if self.auto_tol_var.get() else ["!disabled"])
