@@ -127,7 +127,7 @@ ACCENT2 = "#a77dff"        # violet
 WARN = "#ffcf7a"
 ERR = "#ff9a9a"
 # section cards step from deep blue to violet, a little lighter each time
-CARD_FIRST, CARD_LAST = "#2c3c66", "#57488d"
+CARD_FIRST, CARD_LAST = "#23418c", "#5d3ea6"   # solid blue -> violet
 
 
 class Theme:
@@ -164,7 +164,8 @@ class Theme:
         fill = self.cards[i]
         return dict(fill=fill,
                     inset=mix(fill, "#0b0d16", 0.42),           # list / table / log wells
-                    border=mix(fill, "#ffffff", 0.17),          # light, low-contrast border
+                    border=mix(fill, "#ffffff", 0.17),          # light, low-contrast outer edge
+                    divider=mix(fill, "#ffffff", 0.24),         # line between stacked sections
                     header=mix("#ffffff", ACCENT, 0.30))
 
     def _button(self, name: str, fill: str) -> None:
@@ -218,26 +219,41 @@ class Theme:
 # ====================================================================== custom widgets
 # Tk leaks a little memory for every canvas item created and deleted, so these widgets build
 # their items once per size and afterwards only move or recolour them.
-def _round_rect(x1, y1, x2, y2, r):
-    """Points for a smoothed polygon; the doubled points keep the straight sides straight."""
-    return [x1 + r, y1, x1 + r, y1, x2 - r, y1, x2 - r, y1, x2, y1,
-            x2, y1 + r, x2, y1 + r, x2, y2 - r, x2, y2 - r, x2, y2,
-            x2 - r, y2, x2 - r, y2, x1 + r, y2, x1 + r, y2, x1, y2,
-            x1, y2 - r, x1, y2 - r, x1, y1 + r, x1, y1 + r, x1, y1]
+def _round_rect(x1, y1, x2, y2, r, r_bottom=None):
+    """Points for a smoothed polygon with top corner radius r and bottom radius r_bottom.
+    Doubled points keep the straight sides straight; a radius of 0 gives a sharp corner."""
+    rb = r if r_bottom is None else r_bottom
+
+    def corner(before, at, after, rad):
+        return [*at, *at, *at] if rad <= 0 else [*before, *before, *at, *after, *after]
+
+    return (corner((x1, y1 + r), (x1, y1), (x1 + r, y1), r) + corner((x2 - r, y1), (x2, y1), (x2, y1 + r), r)
+            + corner((x2, y2 - rb), (x2, y2), (x2 - rb, y2), rb) + corner((x1 + rb, y2), (x1, y2), (x1, y2 - rb), rb))
 
 
 class Card(tk.Canvas):
-    """A rounded section box. Put content in `.body`; the card follows its height
-    (or, with expand=True, gives the body whatever height it gets)."""
+    """One section of the stacked column. Put content in `.body`; the card follows its height
+    (or, with expand=True, gives the body whatever height it gets).
+
+    position: "first" (rounded top), "middle", "last" (rounded bottom) or "only" (all rounded).
+    Cards sit flush; a thin light line separates each section from the one above."""
 
     def __init__(self, parent, theme: Theme, index: int, title: str = "", hint: str = "", expand=False,
-                 radius=12, pad=11):
+                 position="only", radius=12, pad=11):
         c = theme.colors(index)
         super().__init__(parent, bg=WINDOW_BG, highlightthickness=0, bd=0, height=40)
         self.fill, self.border, self.radius, self.pad, self.expand = c["fill"], c["border"], radius, pad, expand
-        self.prefix, self.colors = f"C{index}", c
-        self._bg = self.create_polygon(_round_rect(0.5, 0.5, 40, 40, radius), smooth=True, fill=self.fill,
-                                       outline=self.border, width=1)
+        self.prefix, self.colors, self.position = f"C{index}", c, position
+        self._rt = radius if position in ("first", "only") else 0
+        self._rb = radius if position in ("last", "only") else 0
+        self._bg = self.create_polygon(_round_rect(0, 0, 40, 40, self._rt, self._rb), smooth=True, fill=self.fill,
+                                       outline=self.border if position == "only" else "")
+        # outer edges of the column (sides, plus the rounded top or bottom); "middle" cards have two plain sides
+        n = 2 if position == "middle" else (1 if position in ("first", "last") else 0)
+        self._edges = [self.create_line(0, 0, 1, 1, fill=self.border, width=1, smooth=(position != "middle"))
+                       for _ in range(n)]
+        self._divider = (self.create_line(0, 0, 1, 0, fill=c["divider"], width=1)
+                         if position in ("middle", "last") else None)
         self.body = tk.Frame(self, bg=self.fill, bd=0, highlightthickness=0)
         if title:
             head = tk.Frame(self.body, bg=self.fill)
@@ -260,10 +276,28 @@ class Card(tk.Canvas):
                 self.configure(height=h)
 
     def _on_canvas(self, e):
-        self.itemconfigure(self._win, width=max(e.width - 2 * self.pad, 1))
+        w, h = e.width, e.height
+        self.itemconfigure(self._win, width=max(w - 2 * self.pad, 1))
         if self.expand:
-            self.itemconfigure(self._win, height=max(e.height - 2 * self.pad, 1))
-        self.coords(self._bg, *_round_rect(0.5, 0.5, e.width - 1.5, e.height - 1.5, self.radius))
+            self.itemconfigure(self._win, height=max(h - 2 * self.pad, 1))
+        if self.position == "only":
+            self.coords(self._bg, *_round_rect(0.5, 0.5, w - 0.5, h - 0.5, self._rt, self._rb))
+        else:
+            self.coords(self._bg, *_round_rect(0, 0, w, h, self._rt, self._rb))
+        x1, x2, r = 0.5, w - 0.5, self.radius
+        if self.position == "first":   # up the left side, round the top, down the right side
+            y = 0.5
+            self.coords(self._edges[0], x1, h, x1, h, x1, r, x1, r, x1, y, x1 + r, y, x1 + r, y,
+                        x2 - r, y, x2 - r, y, x2, y, x2, r, x2, r, x2, h, x2, h)
+        elif self.position == "last":  # down the left side, round the bottom, up the right side
+            y = h - 0.5
+            self.coords(self._edges[0], x1, 0, x1, 0, x1, h - r, x1, h - r, x1, y, x1 + r, y, x1 + r, y,
+                        x2 - r, y, x2 - r, y, x2, y, x2, h - r, x2, h - r, x2, 0, x2, 0)
+        elif self.position == "middle":
+            self.coords(self._edges[0], x1, 0, x1, h)
+            self.coords(self._edges[1], x2, 0, x2, h)
+        if self._divider is not None:
+            self.coords(self._divider, 0, 0.5, w, 0.5)
 
 
 def _capsule_columns(width, height, radius):
@@ -493,9 +527,10 @@ class Mesh2CadApp:
         ttk.Button(top, text="Feedback / report a problem…", style="Window.TButton",
                    command=self.send_feedback).pack(side="right")
         top.pack_configure(pady=(0, 8))
-        gap = dict(fill="x", pady=(0, 8))
+        gap = dict(fill="x")  # sections stack flush into one column
         # --- input files
-        card = Card(main, T, 0, "Input files", "add files or a folder, paste a path, or drop files on the app icon")
+        card = Card(main, T, 0, "Input files", "add files or a folder, paste a path, or drop files on the app icon",
+                    position="first")
         card.pack(**gap)
         b, p, c = card.body, card.prefix, card.colors
         row = tk.Frame(b, bg=card.fill)
@@ -528,7 +563,7 @@ class Mesh2CadApp:
         Toggle(prow, card, T, "Include subfolders", self.recursive_var).pack(side="left", padx=(14, 0))
 
         # --- output
-        card = Card(main, T, 1, "Output", "your original mesh files are never changed")
+        card = Card(main, T, 1, "Output", "your original mesh files are never changed", position="middle")
         card.pack(**gap)
         b, p = card.body, card.prefix
         r2 = tk.Frame(b, bg=card.fill)
@@ -542,7 +577,7 @@ class Mesh2CadApp:
             side="left", padx=(16, 0))
 
         # --- options
-        card = Card(main, T, 2, "Conversion options")
+        card = Card(main, T, 2, "Conversion options", position="middle")
         card.pack(**gap)
         b, p = card.body, card.prefix
         # collapsible: a one-line summary stands in for the controls (saves height on smaller screens)
@@ -601,7 +636,7 @@ class Mesh2CadApp:
             self._update_opts_summary()
 
         # --- run: actions + progress
-        card = Card(main, T, 3)
+        card = Card(main, T, 3, position="middle")
         card.pack(**gap)
         b, p, c = card.body, card.prefix, card.colors
         act = tk.Frame(b, bg=card.fill)
@@ -636,17 +671,20 @@ class Mesh2CadApp:
         ttk.Label(drow, textvariable=self.stage_var, style=f"{p}.Muted.TLabel", width=1).pack(side="left", fill="x",
                                                                                              expand=True)
 
-        # --- summary + activity log share the rest of the height; drag the gap between them to resize.
-        # Each keeps a minimum, so neither disappears on a short screen.
-        split = tk.PanedWindow(main, orient="vertical", bg=WINDOW_BG, bd=0, sashwidth=8, sashpad=0,
-                               showhandle=False, sashrelief="flat", opaqueresize=True)
-        split.pack(fill="both", expand=True)
-        sum_card = Card(split, T, 4, "Summary", "double-click a row to show the STEP file", expand=True)
-        log_card = Card(split, T, 5, "Activity log", expand=True)
-        sum_card.configure(height=180)
-        log_card.configure(height=130)
-        split.add(sum_card, minsize=100, stretch="always")
-        split.add(log_card, minsize=86, stretch="always")
+        # --- summary + activity log share the rest of the height (about 60 / 40), each with a minimum,
+        # so neither disappears on a short screen
+        area = tk.Frame(main, bg=WINDOW_BG, height=220)
+        area.pack(fill="both", expand=True)
+        sum_card = Card(area, T, 4, "Summary", "double-click a row to show the STEP file", expand=True,
+                        position="middle")
+        log_card = Card(area, T, 5, "Activity log", expand=True, position="last")
+
+        def share(e):
+            log_h = max(86, min(int(e.height * 0.42), e.height - 100))
+            sum_card.place(x=0, y=0, width=e.width, height=e.height - log_h)
+            log_card.place(x=0, y=e.height - log_h, width=e.width, height=log_h)
+
+        area.bind("<Configure>", share)
 
         card = log_card
         b, p, c = card.body, card.prefix, card.colors
