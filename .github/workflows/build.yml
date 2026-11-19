@@ -60,8 +60,19 @@ jobs:
         if: runner.os == 'macOS'
         continue-on-error: true
         run: |
-          find dist/Mesh2CAD.app -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
-            | xargs -0 -n 100 vtool -show-build 2>/dev/null | awk '/minos/ {print $2}' | sort -V | uniq -c | tail -3 || true
+          echo "count minos (newest last):"
+          find dist/Mesh2CAD.app -type f \( -name "*.so" -o -name "*.dylib" -o -path "*/MacOS/*" \) | while read -r f; do
+            otool -l "$f" 2>/dev/null | awk '/LC_BUILD_VERSION/{b=1} b && $1=="minos" {print $2; b=0}
+                                          /LC_VERSION_MIN_MACOSX/{v=1} v && $1=="version" {print $2; v=0}'
+          done | sort -V | uniq -c | tail -4
+
+      - name: Window screenshot as text (so it can be read from the log)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          for f in window-*.png; do [ -f "$f" ] || continue
+            echo "::group::$f base64"; echo "BEGIN-PNG $f"; base64 -i "$f" | fold -w 4000; echo "END-PNG"; echo "::endgroup::"
+          done
 
       - name: Check the Windows app
         if: runner.os == 'Windows'
