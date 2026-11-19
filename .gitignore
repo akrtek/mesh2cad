@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+dmg/
+.venv/
+venv/
+*.step
+*.stp
+!tests/data/*.step
+mesh2cad_selftest.json
+window-*.png
+Mesh2CAD-*.dmg
+Mesh2CAD-*.zip
+.DS_Store
+backup-*/

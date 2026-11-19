@@ -1,0 +1,114 @@
+name: Build apps
+
+# Every push builds and checks the Mac (Apple Silicon + Intel) and Windows apps; the
+# downloads are attached to the workflow run. Pushing a tag like v0.2.0 also publishes
+# them as a GitHub Release, which is the link testers use.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15, name: macOS-AppleSilicon }
+          - { os: macos-15-intel, name: macOS-Intel }
+          - { os: windows-latest, name: Windows }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . "pyinstaller>=6.16"
+
+      - name: Check the converter (from source)
+        run: python tests/smoke_check.py cli
+
+      - name: Build the app
+        run: pyinstaller --noconfirm packaging/Mesh2CAD.spec
+
+      - name: Sign (ad hoc) and check the Mac app
+        if: runner.os == 'macOS'
+        env:
+          SELFTEST_SHOTS: ${{ github.workspace }}
+        run: |
+          codesign --force --deep --sign - dist/Mesh2CAD.app
+          codesign --verify --deep --strict dist/Mesh2CAD.app
+          python tests/smoke_check.py frozen dist/Mesh2CAD.app/Contents/MacOS/Mesh2CAD
+          echo "Size: $(du -sh dist/Mesh2CAD.app | cut -f1)"
+
+      - name: Report the oldest macOS the bundled libraries accept
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        run: |
+          find dist/Mesh2CAD.app -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
+            | xargs -0 -n 100 vtool -show-build 2>/dev/null | awk '/minos/ {print $2}' | sort -V | uniq -c | tail -3 || true
+
+      - name: Check the Windows app
+        if: runner.os == 'Windows'
+        run: python tests/smoke_check.py frozen dist/Mesh2CAD/Mesh2CAD.exe
+
+      - name: Package (macOS disk image)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION=$(python -c "import mesh2cad; print(mesh2cad.__version__)")
+          mkdir dmg && cp -R dist/Mesh2CAD.app dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "Mesh2CAD $VERSION" -srcfolder dmg -ov -format UDZO \
+            "Mesh2CAD-$VERSION-${{ matrix.name }}.dmg"
+
+      - name: Package (Windows zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = python -c "import mesh2cad; print(mesh2cad.__version__)"
+          Compress-Archive -Path dist/Mesh2CAD -DestinationPath "Mesh2CAD-$v-Windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mesh2CAD-${{ matrix.name }}
+          path: |
+            Mesh2CAD-*.dmg
+            Mesh2CAD-*.zip
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshot-${{ matrix.name }}
+          path: window-*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Mesh2CAD-*
+          path: artifacts
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --title "Mesh2CAD ${GITHUB_REF_NAME#v}" --notes-file .github/RELEASE_NOTES.md

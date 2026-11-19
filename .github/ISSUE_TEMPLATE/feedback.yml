@@ -1,0 +1,17 @@
+name: Idea or general feedback
+description: What you liked, what was confusing, what you'd like it to do
+labels: ["feedback"]
+body:
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+      description: Anything goes. What were you converting, and what would make it better?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics from the app (optional)
+      description: The app's "Feedback / report a problem…" button copies these for you.
+      render: text

@@ -1,0 +1,32 @@
+name: Something didn't work
+description: A model failed, the app misbehaved, or the result looks wrong in CAD
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! The **Feedback / report a problem…** button in the app copies your version, settings and activity log. Paste them in the Diagnostics box below.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you got instead.
+      placeholder: "Converted a Gridfinity bin; it stayed at 'Finding curved surfaces' for 10 minutes…"
+    validations:
+      required: true
+  - type: textarea
+    id: model
+    attributes:
+      label: The model
+      description: Drag the STL / 3MF here (zip it if GitHub refuses the file type), or paste a MakerWorld / Printables link.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics from the app
+      description: Click "Feedback / report a problem…" in Mesh2CAD, then paste here (⌘V / Ctrl+V).
+      render: text
+  - type: input
+    id: computer
+    attributes:
+      label: Computer
+      placeholder: "MacBook Pro M3, macOS 15.6"

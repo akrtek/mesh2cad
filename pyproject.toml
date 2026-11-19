@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mesh2cad"
+dynamic = ["version"]
+description = "Convert STL/3MF meshes exported from CAD back into STEP solids with real planes, cylinders, cones, spheres and tori"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "trimesh>=4.0",
+  "rtree>=1.0",
+  "networkx>=3.0",
+  "cadquery-ocp==8.0.1.1.0",
+]
+
+[project.optional-dependencies]
+app = ["pyinstaller>=6.16"]
+
+[project.urls]
+Homepage = "https://github.com/akrtek/mesh2cad"
+Issues = "https://github.com/akrtek/mesh2cad/issues"
+Changelog = "https://github.com/akrtek/mesh2cad/blob/main/CHANGELOG.md"
+
+[project.scripts]
+mesh2cad = "mesh2cad.cli:main"
+
+[project.gui-scripts]
+mesh2cad-gui = "mesh2cad.gui:main"
+
+[tool.setuptools]
+packages = ["mesh2cad"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mesh2cad.__version__" }
